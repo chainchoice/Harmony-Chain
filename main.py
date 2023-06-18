@@ -5,9 +5,64 @@ from basic_pitch.inference import predict
 from io import BytesIO
 from PIL import Image
 import numpy as np
-import pandas as pd
+import collections
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
+import requests
+import json
+import os
+import tempfile
+import urllib.request
 
-def convert_audio_to_midi_and_visualize(file_path):
+note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+# Dictionary of chords and their relative note structures
+chord_types = {
+    'Major Triad': [0, 4, 7],
+    'Minor Triad': [0, 3, 7],
+    'Diminished Triad': [0, 3, 6],
+    'Augmented Triad': [0, 4, 8],
+    'Dominant Seventh': [0, 4, 7, 10],
+    'Diminished Seventh': [0, 3, 6, 9],
+    'Major Seventh': [0, 4, 7, 11],
+    'Minor Seventh': [0, 3, 7, 10],
+    'Minor Seventh Flat Five': [0, 3, 6, 10],
+    'Augmented Seventh': [0, 4, 8, 10],
+    'Augmented Major Seventh': [0, 4, 8, 11],
+    'Suspended Fourth': [0, 5, 7],
+    'Sixth Chord': [0, 4, 7, 9],
+    'Flat Ninth': [0, 4, 7, 10, 13],
+    'Ninth': [0, 4, 7, 10, 14],
+    'Sharp Ninth': [0, 4, 7, 10, 15],
+    'Eleventh': [0, 4, 7, 10, 14, 17],
+    'Sharp Eleventh': [0, 4, 7, 10, 14, 18],
+    'Flat Thirteenth': [0, 4, 7, 10, 14, 17, 20],
+    'Sharp Thirteenth': [0, 4, 7, 10, 14, 18, 21]
+}
+
+# Initialize LLM wrapper
+llm = OpenAI(temperature=0.7)
+
+# Create prompt template
+prompt = PromptTemplate(
+    input_variables=["chord","concept"],
+    template="「楽曲中に出現したコードの種類と頻度」:{chord}「楽曲のコンセプト」:{concept} ［１］：「楽曲中に出現したコードの種類と頻度」を基に「楽曲のおしゃれさ」「楽曲の明るさ」「楽曲の暗さ」「切なさ」「複雑さ」を100段階でスコアリングしてください。［2］：［１］で抽出した得点および「楽曲のコンセプト」をもとにこの楽曲のコンセプトアートとして適切な画像のイメージを描写してください。［3］：［2］で描写した適切な画像のイメージを300文字の英語で抽出してください。［4］[1]～[3]を順に実施し返答してください。ただし出力は[3]で生成した300文字の英語のみとしてください。",
+)
+
+# Create LLM chain
+chain = LLMChain(llm=llm, prompt=prompt)
+
+
+def identify_chord(notes_present):
+    chords = []
+    for root_note in range(12):
+        for chord_name, structure in chord_types.items():
+            if all((note + root_note) % 12 in notes_present for note in structure):
+                chords.append(chord_name)
+    return chords
+
+def convert_audio_to_midi_and_visualize(file_path, concept):
     # Generate MIDI data from audio
     model_output, midi_data, note_events = predict(file_path)
 
@@ -18,17 +73,35 @@ def convert_audio_to_midi_and_visualize(file_path):
     # Read MIDI data using pypianoroll
     multitrack = pypianoroll.read(temp_midi_path, resolution=12)
     multitrack_numpy = multitrack.stack()
-    print(multitrack_numpy)
-    print(multitrack_numpy[0])
-    filename = "output.csv"
-    np.savetxt(filename, multitrack_numpy[0], delimiter=",")
     
-    # Visualize numpy array
+    # Extracting the number of time steps
+    num_time_steps = multitrack_numpy.shape[1]
+    
+    # Tally chords
+    chord_tally = collections.defaultdict(int)
+    
+    # Iterate through time steps and identify chords
+    for time_step in range(num_time_steps):
+        notes_present = set()
+        for pitch in range(128):
+            if multitrack_numpy[0, time_step, pitch] > 0:
+                note_idx = pitch % 12
+                notes_present.add(note_idx)
+                
+        # Identify chords in this timestep
+        chords_in_timestep = identify_chord(notes_present)
+        
+        # Tally the identified chords
+        for chord in chords_in_timestep:
+            chord_tally[chord] += 1
+    
+    # Visualize the chord tally as a bar graph
     fig, ax = plt.subplots(figsize=(10, 4))
-    ax.imshow(multitrack_numpy[0].T, aspect='auto', cmap='viridis')
-    ax.set_xlabel("Time step")
-    ax.set_ylabel("Pitch")
-    ax.figure.colorbar(ax.imshow(multitrack_numpy[0].T, aspect='auto', cmap='viridis'), ax=ax, label="Velocity")
+    ax.bar(chord_tally.keys(), chord_tally.values())
+    ax.set_xlabel("Chord Type")
+    ax.set_ylabel("Occurrences")
+    plt.xticks(rotation=45)
+    plt.tight_layout()
 
     # Save image in bytes
     image_byte = BytesIO()
@@ -38,90 +111,57 @@ def convert_audio_to_midi_and_visualize(file_path):
     # Convert byte image to PIL
     pil_image = Image.open(image_byte)
     
-    # Estimate chords based on the MIDI data
-    chord_names = estimate_chords(multitrack_numpy[0])
-    
-    return pil_image, chord_names, temp_midi_path
+    # Run LLM chain with the chord tally and concept as inputs
+    chord_tally_str = str(chord_tally)
+    prediction = chain.run({"chord": chord_tally_str, "concept": concept})
 
+    # Make request to OpenAI image generation API
+    url = "https://api.openai.com/v1/images/generations"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]
+    }
+    data = {
+        "prompt": prediction.strip(),
+        "n": 1,
+        "size": "512x512"
+    }
+    response = requests.post(url, headers=headers, data=json.dumps(data))
+    response_data = response.json()
 
-def estimate_chords(midi_array):
-    # Extended chord estimation logic (major, minor, augmented, major 7th, dominant 7th, sus4, etc.)
-    # This is a basic example and can be improved.
-    
-    chord_names = []
-    
-    # Define basic chords
-    major = [4, 7]
-    minor = [3, 7]
-    augmented = [4, 8]
-    
-    # Define seventh chords and others
-    major_seventh = [4, 7, 11]
-    dominant_seventh = [4, 7, 10]
-    minor_seventh = [3, 7, 10]
-    sus4 = [5, 7]
-    
-    # Tensions (extensions)
-    ninth = [14]
-    eleventh = [17]
-    thirteenth = [21]
-    
-    for time_step in midi_array:
-        notes = np.where(time_step > 0)[0]
-        if len(notes) < 3:
-            chord_names.append("N/A")
-            continue
+    # Debugging: print the response data structure
+    print("Response Data:", response_data)
 
-        intervals = np.sort(notes[1:] - notes[0])
-        
-        # Check basic triads
-        if np.array_equal(intervals[:2], major):
-            chord_names.append("Major")
-        elif np.array_equal(intervals[:2], minor):
-            chord_names.append("Minor")
-        elif np.array_equal(intervals[:2], augmented):
-            chord_names.append("Augmented")
-        # Check seventh chords
-        elif np.array_equal(intervals[:3], major_seventh):
-            chord_names.append("Major Seventh")
-        elif np.array_equal(intervals[:3], dominant_seventh):
-            chord_names.append("Dominant Seventh")
-        elif np.array_equal(intervals[:3], minor_seventh):
-            chord_names.append("Minor Seventh")
-        # Check sus4
-        elif np.array_equal(intervals[:2], sus4):
-            chord_names.append("Sus4")
-        # Check tensions
+    # Process the response data to obtain the image URL
+    try:
+        if 'data' in response_data and len(response_data['data']) > 0:
+            image_url = response_data['data'][0]['url']
+            # Download the image and save it to a temporary file
+            with urllib.request.urlopen(image_url) as response, tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp_file:
+                tmp_file.write(response.read())
+                tmp_file_path = tmp_file.name  # this will be the path to the temporary file
         else:
-            base_chord = "Unknown"
-            if np.array_equal(intervals[:3], dominant_seventh):
-                base_chord = "Dominant"
-            elif np.array_equal(intervals[:3], minor_seventh):
-                base_chord = "Minor"
-                
-            if len(intervals) > 3 and intervals[3] in ninth:
-                chord_names.append(f"{base_chord} Ninth")
-            elif len(intervals) > 4 and intervals[4] in eleventh:
-                chord_names.append(f"{base_chord} Eleventh")
-            elif len(intervals) > 5 and intervals[5] in thirteenth:
-                chord_names.append(f"{base_chord} Thirteenth")
-            else:
-                chord_names.append("Other")
-    
-    return chord_names
+            tmp_file_path = None  # Or a placeholder file path in case of failure
+    except KeyError:
+        print("Error: The key 'url' is not found in the response data.")
+        tmp_file_path = None  # Or a placeholder file path in case of failure
 
+    return pil_image, temp_midi_path, chord_tally, prediction.strip(), tmp_file_path
 
+# Define interface to accept uploaded files and text input for the concept
+inputs = [
+    gr.inputs.Audio(type="filepath", label="Upload a WAV file"),
+    gr.inputs.Textbox(label="Enter the Concept of the Music")
+]
 
-# Define interface to accept uploaded files
-inputs = gr.inputs.Audio(type="filepath", label="Upload a WAV file")
-
-# The outputs are the visualized numpy array as an image, an array of chord names, and the converted MIDI file
+# The outputs are the visualized chord tally as an image, the converted MIDI file, the chord tally, and the prediction
 outputs = [
-    gr.outputs.Image(type="pil", label="Visualized MIDI Data"),
-    gr.outputs.Textbox(label="Chord Names"),
-    gr.outputs.File(label="Converted MIDI File")
+    gr.outputs.Image(type="pil", label="Chord Tally Visualization"),
+    gr.outputs.File(label="Converted MIDI File"),
+    gr.outputs.JSON(label="Chord Tally Data"),
+    gr.outputs.Textbox(label="Prediction"),
+    gr.outputs.File(label="Download Generated Image")  # Note the change here to 'File'
 ]
 
 # Launch the interface
 gr.Interface(fn=convert_audio_to_midi_and_visualize, inputs=inputs, outputs=outputs).launch()
-
