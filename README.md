@@ -15,7 +15,7 @@ The generated image can be fused with the original music and minted as a Non-Fun
 - Accepts a user-specified concept as a creative input.
 - Generates text-based descriptions of images related to the music and concept.
 - Uses OpenAI's API to synthesize images from the text descriptions.
-- Offers the option to mint the music and generated image as an NFT.
+- Offers the option to mint the music and generated image as an NFT.（unfinished）
 
 ## Installation
 
@@ -56,6 +56,6 @@ You will see a chord visualization, the MIDI file, chord data, a text-based desc
 
 5. **Storing to Firebase**: The generated image is uploaded to Firebase storage and made accessible via a public URL.
 
-6. **NFT Minting**: (Optional) The music and image can be minted as a Non-Fungible Token, validating its uniqueness and value.
+6. **NFT Minting**: (Optional) The music and image can be minted as a Non-Fungible Token, validating its uniqueness and value.（unfinished）
 
 TuneLink, through its innovative blend of technology, invites you on a journey where music and art converge, building bridges across cultures and stimulating new avenues in the realm of artistic expression.
