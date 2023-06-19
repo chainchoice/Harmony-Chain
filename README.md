@@ -35,7 +35,7 @@ pip install gradio pypianoroll matplotlib requests Pillow
 Run the script:
 
 ```sh
-python script_name.py
+python main.py
 ```
 
 This will launch a web-based user interface. Follow these steps to use the application:
