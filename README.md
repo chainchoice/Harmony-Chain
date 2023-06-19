@@ -1,15 +1,13 @@
 # TuneLink
 
 ## About
-「TuneLink」という名の下、本プロジェクトは高度なデジタル技術を活用し、複数のメディアコンテンツを精密に連携させ、世界における文化的調和を促進することを目的としています。Tuneは音楽と調和の両方を意味し、Linkは連携と結びつきを示しており、これにより「TuneLink」はその名称が示す通り、異なる音楽ジャンルや文化の要素をデジタル的に解析し、これらを結びつけ、再構築することで多様性に富む音楽作品を生み出すという、重要な使命を帯びたプロジェクトです。
+Under the name "TuneLink", this project utilizes advanced digital technologies to meticulously integrate multiple media contents, with the aim of promoting cultural harmony across the globe. The term “Tune” implies both music and harmony, while “Link” signifies connection and association, which embodies the essence of “TuneLink” as a project with a critical mission - as suggested by its name - to digitally analyze different music genres and cultural elements, and by linking and reconstructing them, to create musically diverse compositions.
 
-### ハッカソンでの取り組み
-本ハッカソンにおいては、「TuneLink」プロジェクトの実現に必要な核となるエンジンの開発を行いました。WAV形式の音楽ファイルを初期入力として受け取り、これを演奏データ（MIDI）に変換した上で音楽的意味合いを持つ統計データへと変換します。この統計データをLarge Language Model (LLM) に供給し、楽曲に関連する概念的なイメージをテキスト形式で抽出します。このテキストを基に、画像生成AIを用いて楽曲の概念的イメージを視覚的に表現した画像を生成します。
+### Efforts in the Hackathon
+In this hackathon, we developed the core engine essential for realizing the "TuneLink" project. We take music files in WAV format as initial inputs, and convert them into performance data (MIDI), which is then transformed into statistical data with musical implications. This statistical data is fed into a Large Language Model (LLM), which extracts conceptual images associated with the music in text format. Based on this text, an image-generation AI is employed to visually represent the conceptual images of the music.
 
-### NFTとしての生成
-
-最終段階では、生成された画像と音楽を結合し、これをNFT（非代替性トークン）として生成、ブロックチェーン上に格納します。これにより、それぞれの作品は独自性を持つ価値あるデジタル資産として扱われることになります。
-結論として、「TuneLink」は音楽と文化をデジタル的に解析し、結びつけることで、新たな価値を創造する画期的な取り組みです。このプロジェクトは、音楽の旋律をデジタル的な連鎖で繋ぎ合わせ、世界的な文化的つながりを深めることにより、未来に向けて新しい可能性を切り開くものであると言えます。
+### Generation as NFT
+In the final stage, the generated image is combined with the music, and this is produced as a Non-Fungible Token (NFT) and stored on the blockchain. Consequently, each piece of work is treated as a valuable digital asset with its uniqueness. In conclusion, “TuneLink” is a groundbreaking initiative that digitally analyzes and links music and culture to create new value. This project can be described as one that paves new possibilities for the future by connecting the melodies of music through digital chains and deepening global cultural connections.
 
 
 # Music Concept Art Generator
