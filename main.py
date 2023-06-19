@@ -14,6 +14,15 @@ import json
 import os
 import tempfile
 import urllib.request
+import firebase_admin
+from firebase_admin import credentials, storage
+import uuid
+import shutil
+
+
+# Firebase Admin SDK initialization
+cred = credentials.Certificate('XXX')
+firebase_admin.initialize_app(cred, {'storageBucket': 'XXX'})
 
 note_names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
@@ -53,6 +62,23 @@ prompt = PromptTemplate(
 # Create LLM chain
 chain = LLMChain(llm=llm, prompt=prompt)
 
+def upload_to_firebase_storage(local_file_path):
+    # Create a unique ID for the file
+    unique_id = str(uuid.uuid4())
+    
+    # Create destination file path in the storage
+    dest_file_path = 'generated_images/{}.jpg'.format(unique_id)
+    
+    # Upload the file
+    bucket = storage.bucket()
+    blob = bucket.blob(dest_file_path)
+    blob.upload_from_filename(local_file_path)
+    
+    # Make the file publicly accessible
+    blob.make_public()
+    
+    # Return the public URL of the file
+    return blob.public_url
 
 def identify_chord(notes_present):
     chords = []
@@ -62,7 +88,20 @@ def identify_chord(notes_present):
                 chords.append(chord_name)
     return chords
 
-def convert_audio_to_midi_and_visualize(file_path, concept):
+class CustomLLMChain:
+    def __init__(self, api_key, temperature=0.7):
+        self.llm = OpenAI(temperature=temperature, api_key=api_key)
+        self.prompt = PromptTemplate(
+            input_variables=["chord","concept"],
+            template="「楽曲中に出現したコードの種類と頻度」:{chord}「楽曲のコンセプト」:{concept} ［１］：「楽曲中に出現したコードの種類と頻度」を基に「楽曲のおしゃれさ」「楽曲の明るさ」「楽曲の暗さ」「切なさ」「複雑さ」を100段階でスコアリングしてください。［2］：［１］で抽出した得点および「楽曲のコンセプト」をもとにこの楽曲のコンセプトアートとして適切な画像のイメージを描写してください。［3］：［2］で描写した適切な画像のイメージを300文字の英語で抽出してください。［4］[1]～[3]を順に実施し返答してください。ただし出力は[3]で生成した300文字の英語のみとしてください。",
+        )
+        self.chain = LLMChain(llm=self.llm, prompt=self.prompt)
+
+    def run(self, inputs):
+        return self.chain.run(inputs)
+
+def convert_audio_to_midi_and_visualize(file_path, concept, openai_api_key):
+    chain = CustomLLMChain(openai_api_key)
     # Generate MIDI data from audio
     model_output, midi_data, note_events = predict(file_path)
 
@@ -119,7 +158,7 @@ def convert_audio_to_midi_and_visualize(file_path, concept):
     url = "https://api.openai.com/v1/images/generations"
     headers = {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]
+        "Authorization": "Bearer " + openai_api_key
     }
     data = {
         "prompt": prediction.strip(),
@@ -146,21 +185,33 @@ def convert_audio_to_midi_and_visualize(file_path, concept):
         print("Error: The key 'url' is not found in the response data.")
         tmp_file_path = None  # Or a placeholder file path in case of failure
 
-    return pil_image, temp_midi_path, chord_tally, prediction.strip(), tmp_file_path
+    # Upload the image to Firebase Storage
+    if tmp_file_path:
+        public_url = upload_to_firebase_storage(tmp_file_path)
+        
+        # Optionally, remove the local temporary file
+        # (uncomment the following line if you want to remove the local file)
+        # os.remove(tmp_file_path)
+    else:
+        public_url = None
 
-# Define interface to accept uploaded files and text input for the concept
+    return pil_image, temp_midi_path, chord_tally, prediction.strip(), public_url
+
+# Define interface to accept uploaded files, text input for the concept, and the OpenAI API key
 inputs = [
     gr.inputs.Audio(type="filepath", label="Upload a WAV file"),
-    gr.inputs.Textbox(label="Enter the Concept of the Music")
+    gr.inputs.Textbox(label="Enter the Concept of the Music"),
+    gr.inputs.Textbox(label="Enter OpenAI API Key")
+
 ]
 
-# The outputs are the visualized chord tally as an image, the converted MIDI file, the chord tally, and the prediction
+# Modifying the outputs to return the public URL instead of the file
 outputs = [
     gr.outputs.Image(type="pil", label="Chord Tally Visualization"),
     gr.outputs.File(label="Converted MIDI File"),
     gr.outputs.JSON(label="Chord Tally Data"),
     gr.outputs.Textbox(label="Prediction"),
-    gr.outputs.File(label="Download Generated Image")  # Note the change here to 'File'
+    gr.outputs.Textbox(label="Generated Image Public URL")  # Return the public URL instead of the file
 ]
 
 # Launch the interface
